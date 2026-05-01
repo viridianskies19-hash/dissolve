@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watercolor Collection • Darkly Bright</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+  <style>
+    body { font-family: system-ui, sans-serif; background: #F8F9FA; }
+    .art-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .art-card:hover { transform: translateY(-6px); box-shadow: 0 15px 25px -5px rgb(0 0 0 / 0.1); }
+    /* Fixed: @apply removed — chip now uses plain CSS, not Tailwind @apply which doesn't work in CDN mode */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 0.875rem;
+      padding: 2px 12px;
+      border-radius: 9999px;
+      cursor: default;
+      user-select: none;
+    }
+    .palette-icon {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s infinite;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</head>
+<body class="text-slate-950 min-h-screen">
+
+  <header class="bg-white border-b sticky top-0 z-50 shadow-sm">
+    <div class="max-w-6xl mx-auto px-6 py-6 flex justify-between items-center">
+      <div class="flex items-center gap-4">
+        <img src="ivo.png" alt="Watercolor Leaf" class="palette-icon">
+        <h1 class="text-3xl font-light">Watercolor Collection</h1>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="exportCollection()" class="bg-white border border-slate-300 hover:bg-slate-50 px-5 py-3 rounded-2xl flex items-center gap-2">
+          <i class="fas fa-download" aria-hidden="true"></i> Export
+        </button>
+        <button onclick="document.getElementById('importFile').click()" class="bg-white border border-slate-300 hover:bg-slate-50 px-5 py-3 rounded-2xl flex items-center gap-2">
+          <i class="fas fa-upload" aria-hidden="true"></i> Import
+        </button>
+        <button onclick="openPaintForm({ mode: 'add' })" class="bg-slate-800 text-white px-6 py-3 rounded-2xl flex items-center gap-2 hover:bg-slate-900">
+          <i class="fas fa-plus" aria-hidden="true"></i> Add Paint
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <input type="file" id="importFile" accept=".json" class="hidden" onchange="importCollection(event)">
+
+  <div class="max-w-6xl mx-auto px-6 py-6 flex gap-4">
+    <label for="search" class="sr-only">Search paints</label>
+    <input id="search" placeholder="Search by name, brand, or notes..."
+           oninput="renderGallery()" class="flex-1 border border-slate-300 rounded-3xl px-6 py-4 focus:border-slate-600 outline-none bg-white">
+
+    <label for="sortSelect" class="sr-only">Sort order</label>
+    <select id="sortSelect" onchange="renderGallery()" class="border border-slate-300 rounded-3xl px-6 py-4 bg-white">
+      <option value="name">Sort by Name</option>
+      <option value="brand">Sort by Brand</option>
+      <option value="date">Sort by Date Added</option>
+    </select>
+  </div>
+
+  <div class="max-w-6xl mx-auto px-6">
+    <!-- Loading skeletons shown while DB initialises -->
+    <div id="loading" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+      <div class="skeleton rounded-3xl h-72"></div>
+      <div class="skeleton rounded-3xl h-72"></div>
+      <div class="skeleton rounded-3xl h-72"></div>
+      <div class="skeleton rounded-3xl h-72"></div>
+    </div>
+    <div id="gallery" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
+    <div id="empty" class="hidden text-center py-20">
+      <div class="text-7xl mb-6">🎨</div>
+      <p class="text-slate-500 mb-4">No paints yet. Add your first one!</p>
+      <button onclick="openPaintForm({ mode: 'add' })" class="bg-slate-800 text-white px-8 py-4 rounded-2xl">Add First Paint</button>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+      <div class="p-6 border-b flex justify-between items-center">
+        <h2 id="modalTitle" class="text-2xl"></h2>
+        <button onclick="closeModal()" aria-label="Close modal" class="text-slate-400 hover:text-black text-4xl leading-none">&times;</button>
+      </div>
+
+      <div class="p-6 space-y-4 max-h-[65vh] overflow-auto">
+        <div onclick="document.getElementById('imgUpload').click()"
+             role="button" tabindex="0" aria-label="Upload paint photo"
+             onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('imgUpload').click()"
+             class="border-2 border-dashed border-slate-300 hover:border-slate-500 rounded-3xl p-8 text-center cursor-pointer">
+          <input type="file" id="imgUpload" accept="image/*" class="hidden" onchange="previewImage(event)">
+          <div id="imgPrevContainer" class="hidden mb-4">
+            <img id="previewImg" alt="Paint preview" class="mx-auto max-h-52 rounded-2xl shadow">
+          </div>
+          <div id="imgPlaceholder" class="text-slate-400">Click to upload photo</div>
+        </div>
+
+        <!-- Fixed: proper <label> elements for accessibility -->
+        <div>
+          <label for="name" class="block text-slate-500 text-sm mb-1">Paint Name <span class="text-red-500">*</span></label>
+          <input id="name" placeholder="e.g. Cobalt Blue" required class="w-full border border-slate-300 rounded-2xl px-5 py-3">
+        </div>
+        <div>
+          <label for="brand" class="block text-slate-500 text-sm mb-1">Brand</label>
+          <input id="brand" placeholder="e.g. Winsor & Newton" class="w-full border border-slate-300 rounded-2xl px-5 py-3">
+        </div>
+
+        <div>
+          <label class="block text-slate-500 text-sm mb-2" id="charLabel">Characteristics</label>
+          <div id="characteristicsContainer" aria-labelledby="charLabel" class="flex flex-wrap gap-2 min-h-[50px] border border-slate-300 rounded-3xl p-3"></div>
+          <label for="charSelect" class="sr-only">Add characteristic</label>
+          <select id="charSelect" onchange="addCharacteristic(this.value)" class="w-full mt-2 border border-slate-300 rounded-2xl px-5 py-3">
+            <option value="">Add characteristic...</option>
+            <option value="Transparent">Transparent</option>
+            <option value="Semi-transparent">Semi-transparent</option>
+            <option value="Opaque">Opaque</option>
+            <option value="Granulating">Granulating</option>
+            <option value="Staining">Staining</option>
+            <option value="Non-staining">Non-staining</option>
+            <option value="Lightfast">Lightfast</option>
+            <option value="Fugitive">Fugitive</option>
+            <option value="Lifting">Lifting</option>
+            <option value="Wet-on-wet">Wet-on-wet friendly</option>
+            <option value="Sedimentary">Sedimentary</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="notes" class="block text-slate-500 text-sm mb-1">Notes</label>
+          <textarea id="notes" rows="5" placeholder="Additional notes..." class="w-full border border-slate-300 rounded-3xl px-5 py-4"></textarea>
+        </div>
+      </div>
+
+      <div class="p-6 border-t flex gap-3">
+        <button onclick="closeModal()" class="flex-1 py-4 border rounded-2xl hover:bg-slate-50">Cancel</button>
+        <button onclick="savePaint()" class="flex-1 py-4 bg-slate-800 text-white rounded-2xl hover:bg-slate-900">Save Paint</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+      <div class="p-6 border-b flex justify-between items-center">
+        <h2 id="detailTitle" class="text-2xl font-medium"></h2>
+        <button onclick="closeDetailModal()" aria-label="Close detail" class="text-slate-400 hover:text-black text-4xl leading-none">&times;</button>
+      </div>
+      <div class="p-6 space-y-4 max-h-[70vh] overflow-auto">
+        <div id="detailImage" class="hidden">
+          <img id="detailImg" alt="" class="w-full rounded-2xl shadow max-h-64 object-cover">
+        </div>
+        <div>
+          <span class="text-slate-400 text-sm">Brand</span>
+          <p id="detailBrand" class="text-slate-800"></p>
+        </div>
+        <div id="detailCharsWrap">
+          <span class="text-slate-400 text-sm">Characteristics</span>
+          <div id="detailChars" class="flex flex-wrap gap-2 mt-1"></div>
+        </div>
+        <div>
+          <span class="text-slate-400 text-sm">Notes</span>
+          <p id="detailNotes" class="text-slate-800 whitespace-pre-wrap"></p>
+        </div>
+      </div>
+      <div class="p-6 border-t">
+        <button onclick="closeDetailModal()" class="w-full py-4 border rounded-2xl hover:bg-slate-50">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── State ────────────────────────────────────────────────────────────────
+    let db = null;
+    let allPaints = [];           // Fixed: cached in memory for fast search/sort
+    let selectedCharacteristics = [];
+    let currentImageData = null;  // Fixed: track image state separately from DOM
+    let currentEditId = null;
+
+    const DB_NAME   = "WatercolorDB";
+    const STORE_NAME = "paints";
+
+    // ─── Sanitisation (XSS fix) ───────────────────────────────────────────────
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // ─── IndexedDB ────────────────────────────────────────────────────────────
+    // Fixed: db is set only once in onsuccess; onupgradeneeded just creates the store
+    function initDB() {
+      const request = indexedDB.open(DB_NAME, 1);
+
+      request.onupgradeneeded = e => {
+        const tempDb = e.target.result;
+        if (!tempDb.objectStoreNames.contains(STORE_NAME)) {
+          tempDb.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+        }
+      };
+
+      request.onsuccess = e => {
+        db = e.target.result;
+        loadAllPaints();
+      };
+
+      request.onerror = () => {
+        showNotification("Failed to open database.", "error");
+      };
+    }
+
+    function loadAllPaints(callback) {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      tx.objectStore(STORE_NAME).getAll().onsuccess = e => {
+        allPaints = e.target.result;
+        renderGallery();
+        if (callback) callback();
+      };
+    }
+
+    // ─── Image handling ───────────────────────────────────────────────────────
+    function previewImage(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          const MAX = 800;
+          if (w > MAX || h > MAX) {
+            if (w > h) { h = Math.round(MAX * h / w); w = MAX; }
+            else        { w = Math.round(MAX * w / h); h = MAX; }
+          }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          currentImageData = canvas.toDataURL('image/jpeg', 0.82); // Fixed: stored in JS var
+          document.getElementById('previewImg').src = currentImageData;
+          document.getElementById('imgPrevContainer').classList.remove('hidden');
+          document.getElementById('imgPlaceholder').classList.add('hidden');
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // ─── Characteristics ──────────────────────────────────────────────────────
+    function addCharacteristic(value) {
+      if (!value || selectedCharacteristics.includes(value)) return;
+      selectedCharacteristics.push(value);
+      renderCharacteristics();
+      document.getElementById('charSelect').value = '';
+    }
+
+    function removeCharacteristic(value) {
+      selectedCharacteristics = selectedCharacteristics.filter(v => v !== value);
+      renderCharacteristics();
+    }
+
+    function renderCharacteristics() {
+      const container = document.getElementById('characteristicsContainer');
+      // Fixed: XSS-safe, event passed explicitly
+      container.innerHTML = selectedCharacteristics.map(char => `
+        <div class="chip">
+          ${escapeHtml(char)}
+          <button
+            onclick="removeCharacteristic(${JSON.stringify(char)})"
+            aria-label="Remove ${escapeHtml(char)}"
+            class="ml-1 text-slate-500 hover:text-red-500 bg-transparent border-none cursor-pointer p-0 leading-none">
+            &times;
+          </button>
+        </div>
+      `).join('');
+    }
+
+    // ─── Add / Edit Modal ─────────────────────────────────────────────────────
+    // Fixed: renamed from showAddModal; mode param makes intent explicit
+    function openPaintForm({ mode, id = null }) {
+      document.getElementById('modal').classList.remove('hidden');
+      document.getElementById('name').value = '';
+      document.getElementById('brand').value = '';
+      document.getElementById('notes').value = '';
+      document.getElementById('imgUpload').value = '';
+      document.getElementById('imgPrevContainer').classList.add('hidden');
+      document.getElementById('imgPlaceholder').classList.remove('hidden');
+      selectedCharacteristics = [];
+      currentImageData = null;
+      currentEditId = null;
+
+      if (mode === 'edit' && id != null) {
+        currentEditId = id;
+        document.getElementById('modalTitle').textContent = 'Edit Paint';
+        const paint = allPaints.find(p => p.id === id);
+        if (paint) {
+          document.getElementById('name').value  = paint.name  || '';
+          document.getElementById('brand').value = paint.brand || '';
+          document.getElementById('notes').value = paint.notes || '';
+          if (paint.characteristics) {
+            selectedCharacteristics = paint.characteristics.split(', ').filter(Boolean);
+          }
+          if (paint.image) {
+            currentImageData = paint.image;
+            document.getElementById('previewImg').src = paint.image;
+            document.getElementById('imgPrevContainer').classList.remove('hidden');
+            document.getElementById('imgPlaceholder').classList.add('hidden');
+          }
+        }
+      } else {
+        document.getElementById('modalTitle').textContent = 'Add New Paint';
+      }
+
+      renderCharacteristics();
+      document.getElementById('name').focus();
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+    }
+
+    // ─── Save ─────────────────────────────────────────────────────────────────
+    function savePaint() {
+      const name = document.getElementById('name').value.trim();
+      if (!name) {
+        showNotification("Paint name is required.", "error");
+        document.getElementById('name').focus();
+        return;
+      }
+
+      const isEdit = currentEditId != null;
+
+      const entry = {
+        name:            name,
+        brand:           document.getElementById('brand').value.trim(),
+        characteristics: selectedCharacteristics.join(", "),
+        notes:           document.getElementById('notes').value.trim(),
+        image:           currentImageData || null,   // Fixed: use JS state, not DOM src
+        // Fixed: only set dateAdded on new paints; preserve original on edits
+        dateAdded:       isEdit
+                           ? (allPaints.find(p => p.id === currentEditId)?.dateAdded || new Date().toISOString())
+                           : new Date().toISOString()
+      };
+
+      if (isEdit) entry.id = currentEditId;
+
+      const tx    = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      isEdit ? store.put(entry) : store.add(entry);
+
+      tx.oncomplete = () => {
+        closeModal();
+        loadAllPaints();
+        showNotification(isEdit ? "Paint updated!" : "Paint saved!");
+      };
+      tx.onerror = () => showNotification("Save failed.", "error");
+    }
+
+    // ─── Gallery rendering ────────────────────────────────────────────────────
+    function renderGallery() {
+      const gallery = document.getElementById('gallery');
+      const empty   = document.getElementById('empty');
+      const loading = document.getElementById('loading');
+
+      loading.classList.add('hidden');
+      gallery.classList.remove('hidden');
+      gallery.innerHTML = '';
+
+      // Fixed: search now actually filters
+      const query = document.getElementById('search').value.trim().toLowerCase();
+      const sortMode = document.getElementById('sortSelect').value;
+
+      let paints = query
+        ? allPaints.filter(p =>
+            (p.name  || '').toLowerCase().includes(query) ||
+            (p.brand || '').toLowerCase().includes(query) ||
+            (p.notes || '').toLowerCase().includes(query) ||
+            (p.characteristics || '').toLowerCase().includes(query)
+          )
+        : [...allPaints];
+
+      if (sortMode === 'name')  paints.sort((a, b) => (a.name  || '').localeCompare(b.name  || ''));
+      if (sortMode === 'brand') paints.sort((a, b) => (a.brand || '').localeCompare(b.brand || ''));
+      if (sortMode === 'date')  paints.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+
+      if (paints.length === 0) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      paints.forEach(paint => {
+        const card = document.createElement('div');
+        card.className = "art-card bg-white border border-slate-200 rounded-3xl overflow-hidden cursor-pointer";
+
+        // Fixed: all dynamic content escaped to prevent XSS
+        const imgHtml = paint.image
+          ? `<img src="${escapeHtml(paint.image)}" alt="${escapeHtml(paint.name)}" class="w-full h-full object-cover">`
+          : `<div class="h-full flex items-center justify-center text-7xl opacity-20" aria-hidden="true">🎨</div>`;
+
+        card.innerHTML = `
+          <div class="relative h-56 bg-slate-100">${imgHtml}</div>
+          <div class="p-5">
+            <div class="text-slate-500 text-sm">${escapeHtml(paint.brand)}</div>
+            <div class="font-medium">${escapeHtml(paint.name)}</div>
+            ${paint.characteristics ? `<div class="text-xs text-slate-500 mt-1">${escapeHtml(paint.characteristics)}</div>` : ''}
+            <div class="mt-4 flex gap-2">
+              <button class="edit-btn flex-1 text-xs py-2 border rounded-xl hover:bg-slate-50" aria-label="Edit ${escapeHtml(paint.name)}">Edit</button>
+              <button class="delete-btn flex-1 text-xs py-2 border border-red-200 text-red-600 rounded-xl hover:bg-red-50" aria-label="Delete ${escapeHtml(paint.name)}">Delete</button>
+            </div>
+          </div>
+        `;
+
+        // Fixed: events attached via addEventListener with explicit e param — no global event reference
+        card.querySelector('.edit-btn').addEventListener('click', e => {
+          e.stopPropagation();
+          openPaintForm({ mode: 'edit', id: paint.id });
+        });
+        card.querySelector('.delete-btn').addEventListener('click', e => {
+          e.stopPropagation();
+          deletePaint(paint.id, paint.name);
+        });
+        card.addEventListener('click', () => showDetail(paint));
+
+        gallery.appendChild(card);
+      });
+    }
+
+    // ─── Delete ───────────────────────────────────────────────────────────────
+    function deletePaint(id, name) {
+      if (!confirm(`Delete "${name}"?`)) return;
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => {
+        loadAllPaints();
+        showNotification("Paint deleted.");
+      };
+    }
+
+    // ─── Detail modal (replaces alert()) ─────────────────────────────────────
+    function showDetail(paint) {
+      document.getElementById('detailTitle').textContent = paint.name || '';
+
+      const imgWrap = document.getElementById('detailImage');
+      const imgEl   = document.getElementById('detailImg');
+      if (paint.image) {
+        imgEl.src = paint.image;
+        imgEl.alt = paint.name || 'Paint photo';
+        imgWrap.classList.remove('hidden');
+      } else {
+        imgWrap.classList.add('hidden');
+      }
+
+      document.getElementById('detailBrand').textContent = paint.brand || '—';
+
+      const charsDiv  = document.getElementById('detailChars');
+      const charsWrap = document.getElementById('detailCharsWrap');
+      if (paint.characteristics) {
+        charsDiv.innerHTML = paint.characteristics.split(', ').map(c =>
+          `<span class="chip">${escapeHtml(c)}</span>`
+        ).join('');
+        charsWrap.classList.remove('hidden');
+      } else {
+        charsWrap.classList.add('hidden');
+      }
+
+      document.getElementById('detailNotes').textContent = paint.notes || 'No notes.';
+      document.getElementById('detailModal').classList.remove('hidden');
+    }
+
+    function closeDetailModal() {
+      document.getElementById('detailModal').classList.add('hidden');
+    }
+
+    // ─── Export ───────────────────────────────────────────────────────────────
+    function exportCollection() {
+      const jsonString = JSON.stringify(allPaints, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `watercolor-collection-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // ─── Import ───────────────────────────────────────────────────────────────
+    // Fixed: strip IDs before inserting to avoid collisions with existing records
+    function importCollection(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const imported = JSON.parse(ev.target.result);
+          if (!Array.isArray(imported)) throw new Error("Not an array");
+          const tx    = db.transaction(STORE_NAME, "readwrite");
+          const store = tx.objectStore(STORE_NAME);
+          imported.forEach(item => {
+            const { id: _removed, ...fresh } = item;   // Fixed: remove id so autoIncrement assigns new ones
+            store.add(fresh);
+          });
+          tx.oncomplete = () => {
+            loadAllPaints();
+            showNotification(`Imported ${imported.length} paint${imported.length !== 1 ? 's' : ''}!`);
+          };
+        } catch {
+          showNotification("Import failed. Please select a valid backup file.", "error");
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';  // allow re-importing the same file
+    }
+
+    // ─── Toast notifications (replaces all alert() calls) ────────────────────
+    function showNotification(message, type = "success") {
+      const existing = document.getElementById('toast');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.id = 'toast';
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      const bg = type === 'error' ? 'bg-red-600' : 'bg-slate-800';
+      toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 ${bg} text-white px-6 py-3 rounded-2xl shadow-xl z-[100] text-sm transition-opacity`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 2500);
+    }
+
+    // Close modals on backdrop click
+    document.getElementById('modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal')) closeModal();
+    });
+    document.getElementById('detailModal').addEventListener('click', e => {
+      if (e.target === document.getElementById('detailModal')) closeDetailModal();
+    });
+
+    // Close modals on Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        closeModal();
+        closeDetailModal();
+      }
+    });
+
+    // ─── Boot ─────────────────────────────────────────────────────────────────
+    initDB();
+  </script>
+</body>
+</html>
